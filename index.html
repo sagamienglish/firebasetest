@@ -634,6 +634,18 @@
       }
     }
 
+    async function syncPrivateProfile(user) {
+      try {
+        await db.collection("privateUsers").doc(user.uid).set({
+          email: user.email || "",
+          displayName: user.displayName || "",
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+      } catch (error) {
+        showError(friendlyError(error));
+      }
+    }
+
     function rankLabel(index) {
       return ["🥇", "🥈", "🥉"][index] || String(index + 1);
     }
@@ -724,6 +736,7 @@
           displayName.textContent = user.displayName || "名前未設定";
           email.textContent = user.email || "メールアドレス非公開";
           renderAvatar(user);
+          syncPrivateProfile(user);
           loadProfile(user);
         } else {
           if (stopRanking) {
