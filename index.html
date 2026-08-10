@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>Firebase Login Test</title>
+  <style>
+    :root {
+      color: #172033;
+      font-family: Inter, "Noto Sans JP", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f4f7fb;
+      font-synthesis: none;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 15% 10%, rgba(255, 202, 40, .22), transparent 32%),
+        radial-gradient(circle at 85% 90%, rgba(80, 120, 255, .17), transparent 34%),
+        #f4f7fb;
+    }
+
+    .card {
+      width: min(100%, 430px);
+      padding: 36px;
+      border: 1px solid rgba(255, 255, 255, .9);
+      border-radius: 26px;
+      background: rgba(255, 255, 255, .88);
+      box-shadow: 0 24px 70px rgba(29, 45, 78, .14);
+      backdrop-filter: blur(16px);
+      text-align: center;
+    }
+
+    .logo {
+      width: 66px;
+      height: 66px;
+      margin: 0 auto 18px;
+      display: grid;
+      place-items: center;
+      border-radius: 20px;
+      background: linear-gradient(145deg, #fff5c2, #ffd45b);
+      box-shadow: 0 12px 28px rgba(246, 166, 35, .25);
+      font-size: 34px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 6vw, 30px);
+      letter-spacing: -.03em;
+    }
+
+    .subtitle {
+      margin: 10px 0 28px;
+      color: #667085;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .status {
+      min-height: 22px;
+      margin: 0 0 18px;
+      color: #667085;
+      font-size: 14px;
+    }
+
+    .status.error {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #fff2f1;
+      color: #b42318;
+      line-height: 1.55;
+    }
+
+    button {
+      width: 100%;
+      min-height: 52px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      border: 0;
+      border-radius: 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform .16s ease, box-shadow .16s ease, opacity .16s ease;
+    }
+
+    button:hover:not(:disabled) { transform: translateY(-2px); }
+    button:active:not(:disabled) { transform: translateY(0); }
+    button:focus-visible { outline: 3px solid rgba(66, 133, 244, .28); outline-offset: 3px; }
+    button:disabled { cursor: wait; opacity: .62; }
+
+    .login-button {
+      border: 1px solid #d9dee8;
+      background: #fff;
+      color: #273142;
+      box-shadow: 0 8px 20px rgba(28, 39, 60, .08);
+    }
+
+    .google-mark {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      color: #4285f4;
+      font: 800 20px/1 Arial, sans-serif;
+    }
+
+    .user-panel { display: none; }
+
+    .avatar {
+      width: 92px;
+      height: 92px;
+      margin: 2px auto 16px;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      border: 4px solid #fff;
+      border-radius: 50%;
+      background: #e8eef9;
+      box-shadow: 0 10px 28px rgba(45, 67, 110, .2);
+      color: #50617f;
+      font-size: 34px;
+      font-weight: 800;
+    }
+
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .name { margin: 0 0 5px; font-size: 22px; font-weight: 800; overflow-wrap: anywhere; }
+    .email { margin: 0 0 8px; color: #667085; font-size: 14px; overflow-wrap: anywhere; }
+    .success { margin: 0 0 24px; color: #17803d; font-size: 14px; font-weight: 700; }
+
+    .logout-button { background: #172033; color: #fff; box-shadow: 0 10px 24px rgba(23, 32, 51, .2); }
+
+    .footer {
+      margin: 24px 0 0;
+      color: #98a2b3;
+      font-size: 12px;
+    }
+
+    [hidden] { display: none !important; }
+
+    @media (max-width: 480px) {
+      .card { padding: 30px 22px; border-radius: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="logo" aria-hidden="true">🔥</div>
+    <h1>Firebase Login Test</h1>
+    <p class="subtitle">Googleログインの動作を確認する<br>シンプルな練習ページです。</p>
+
+    <p id="status" class="status" role="status" aria-live="polite">ログイン状態を確認しています…</p>
+
+    <section id="signed-out" hidden>
+      <button id="login-button" class="login-button" type="button">
+        <span class="google-mark" aria-hidden="true">G</span>
+        Googleでログイン
+      </button>
+    </section>
+
+    <section id="signed-in" class="user-panel" aria-label="ログイン中のユーザー情報">
+      <div id="avatar" class="avatar" aria-hidden="true"></div>
+      <p id="display-name" class="name"></p>
+      <p id="email" class="email"></p>
+      <p class="success">✓ ログインに成功しました</p>
+      <button id="logout-button" class="logout-button" type="button">ログアウト</button>
+    </section>
+
+    <p class="footer">Powered by Firebase Authentication</p>
+  </main>
+
+  <!-- Firebase CDN（scriptタグ方式） -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAtTSShVb_dG6vfIf6t1YV3wm_yoz1wkaI",
+      authDomain: "fir-learning-test-879b7.firebaseapp.com",
+      projectId: "fir-learning-test-879b7",
+      storageBucket: "fir-learning-test-879b7.firebasestorage.app",
+      messagingSenderId: "728926715604",
+      appId: "1:728926715604:web:dc0dda4b18271a44588541"
+    };
+
+    const statusText = document.getElementById("status");
+    const signedOut = document.getElementById("signed-out");
+    const signedIn = document.getElementById("signed-in");
+    const loginButton = document.getElementById("login-button");
+    const logoutButton = document.getElementById("logout-button");
+    const avatar = document.getElementById("avatar");
+    const displayName = document.getElementById("display-name");
+    const email = document.getElementById("email");
+
+    const hasPlaceholder = Object.values(firebaseConfig).some((value) => value.includes("PASTE_YOUR"));
+
+    function showError(message) {
+      statusText.textContent = message;
+      statusText.className = "status error";
+    }
+
+    function setBusy(button, busy) {
+      button.disabled = busy;
+      button.setAttribute("aria-busy", String(busy));
+    }
+
+    function renderAvatar(user) {
+      avatar.replaceChildren();
+      if (user.photoURL) {
+        const image = document.createElement("img");
+        image.src = user.photoURL;
+        image.alt = `${user.displayName || "ユーザー"}のプロフィール画像`;
+        image.referrerPolicy = "no-referrer";
+        image.addEventListener("error", () => {
+          avatar.textContent = (user.displayName || user.email || "U").trim().charAt(0).toUpperCase();
+        }, { once: true });
+        avatar.appendChild(image);
+      } else {
+        avatar.textContent = (user.displayName || user.email || "U").trim().charAt(0).toUpperCase();
+      }
+    }
+
+    function friendlyError(error) {
+      const messages = {
+        "auth/popup-closed-by-user": "ログイン画面が閉じられました。もう一度お試しください。",
+        "auth/popup-blocked": "ポップアップがブロックされました。ブラウザで許可してから再度お試しください。",
+        "auth/unauthorized-domain": "このURLがFirebaseで許可されていません。Authenticationの承認済みドメインに追加してください。",
+        "auth/network-request-failed": "通信に失敗しました。インターネット接続を確認してください。"
+      };
+      return messages[error.code] || `エラーが発生しました（${error.code || "unknown"}）`;
+    }
+
+    if (hasPlaceholder) {
+      showError("Firebaseの設定値が未入力です。HTML内の firebaseConfig を実際の値に置き換えてください。");
+      signedOut.hidden = false;
+      loginButton.disabled = true;
+    } else {
+      firebase.initializeApp(firebaseConfig);
+      const auth = firebase.auth();
+      const provider = new firebase.auth.GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: "select_account" });
+
+      auth.onAuthStateChanged((user) => {
+        statusText.className = "status";
+        statusText.textContent = user ? "現在ログイン中です" : "まだログインしていません";
+        signedOut.hidden = Boolean(user);
+        signedIn.style.display = user ? "block" : "none";
+
+        if (user) {
+          displayName.textContent = user.displayName || "名前未設定";
+          email.textContent = user.email || "メールアドレス非公開";
+          renderAvatar(user);
+        }
+      }, (error) => showError(friendlyError(error)));
+
+      loginButton.addEventListener("click", async () => {
+        setBusy(loginButton, true);
+        statusText.className = "status";
+        statusText.textContent = "Googleログイン画面を開いています…";
+        try {
+          await auth.signInWithPopup(provider);
+        } catch (error) {
+          showError(friendlyError(error));
+        } finally {
+          setBusy(loginButton, false);
+        }
+      });
+
+      logoutButton.addEventListener("click", async () => {
+        setBusy(logoutButton, true);
+        try {
+          await auth.signOut();
+        } catch (error) {
+          showError(friendlyError(error));
+        } finally {
+          setBusy(logoutButton, false);
+        }
+      });
+    }
+  </script>
+</body>
+</html>
