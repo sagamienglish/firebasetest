@@ -145,6 +145,41 @@
       border-top: 1px solid #e7eaf0;
     }
 
+    .class-area {
+      margin: 26px 0 0;
+      padding-top: 26px;
+      border-top: 1px solid #e7eaf0;
+    }
+
+    .class-title { margin: 0 0 8px; font-size: 19px; }
+    .class-help { margin: 0 0 17px; color: #667085; font-size: 13px; line-height: 1.6; }
+    .class-options { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+
+    .class-button {
+      min-height: 48px;
+      border: 1px solid #cfd8ea;
+      background: #fff;
+      color: #273142;
+      box-shadow: 0 5px 14px rgba(28, 39, 60, .06);
+    }
+
+    .class-button:hover:not(:disabled) { border-color: #7c9cf5; background: #f7f9ff; }
+    .class-loading { margin: 0; color: #667085; font-size: 14px; }
+
+    .class-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 76px;
+      min-height: 42px;
+      padding: 7px 16px;
+      border-radius: 99px;
+      background: #172033;
+      color: #fff;
+      font-size: 18px;
+      font-weight: 850;
+    }
+
     .nickname-title { margin: 0 0 8px; font-size: 19px; }
     .nickname-help { margin: 0 0 17px; color: #667085; font-size: 13px; line-height: 1.6; }
     .nickname-options { display: grid; gap: 10px; }
@@ -275,6 +310,21 @@
       <p id="email" class="email"></p>
       <p class="success">✓ ログインに成功しました</p>
 
+      <div class="class-area">
+        <p id="class-loading" class="class-loading">クラスを確認しています…</p>
+
+        <section id="class-picker" hidden aria-labelledby="class-title">
+          <h2 id="class-title" class="class-title">クラスを選んでください</h2>
+          <p class="class-help">クラスは登録後に変更できません。</p>
+          <div id="class-options" class="class-options"></div>
+        </section>
+
+        <section id="class-result" hidden aria-label="登録したクラス">
+          <p class="chosen-label">あなたのクラス</p>
+          <span id="chosen-class" class="class-badge"></span>
+        </section>
+      </div>
+
       <div class="nickname-area">
         <p id="nickname-loading" class="nickname-loading">ニックネームを確認しています…</p>
 
@@ -299,7 +349,7 @@
 
       <section id="ranking-area" class="ranking-area" hidden aria-labelledby="ranking-heading">
         <h2 id="ranking-heading" class="ranking-heading">🏆 XPランキング</h2>
-        <p class="ranking-help">ログインユーザー・上位10名</p>
+        <p id="ranking-help" class="ranking-help">クラス内・上位10名</p>
         <div id="ranking-list" class="ranking-list" aria-live="polite">
           <p class="ranking-message">ランキングを読み込んでいます…</p>
         </div>
@@ -343,10 +393,18 @@
     const addXpButton = document.getElementById("add-xp-button");
     const rankingArea = document.getElementById("ranking-area");
     const rankingList = document.getElementById("ranking-list");
+    const rankingHelp = document.getElementById("ranking-help");
+    const classLoading = document.getElementById("class-loading");
+    const classPicker = document.getElementById("class-picker");
+    const classOptions = document.getElementById("class-options");
+    const classResult = document.getElementById("class-result");
+    const chosenClass = document.getElementById("chosen-class");
 
     const hasPlaceholder = Object.values(firebaseConfig).some((value) => value.includes("PASTE_YOUR"));
     let db = null;
     let currentXp = 0;
+    let currentClassId = "";
+    let profileExists = false;
     let stopRanking = null;
 
     function showError(message) {
@@ -429,6 +487,60 @@
       nicknamePicker.hidden = false;
     }
 
+    function showClassPicker(user) {
+      const classes = ["1A", "1B", "1C", "1D"];
+      classOptions.replaceChildren();
+      for (const classId of classes) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "class-button";
+        button.textContent = classId;
+        button.addEventListener("click", () => selectClass(user, classId, button));
+        classOptions.appendChild(button);
+      }
+      classLoading.hidden = true;
+      classResult.hidden = true;
+      classPicker.hidden = false;
+    }
+
+    function showChosenClass(classId) {
+      currentClassId = classId;
+      chosenClass.textContent = classId;
+      classLoading.hidden = true;
+      classPicker.hidden = true;
+      classResult.hidden = false;
+    }
+
+    async function selectClass(user, classId, button) {
+      classOptions.querySelectorAll("button").forEach((item) => { item.disabled = true; });
+      button.textContent = "保存中…";
+      try {
+        currentClassId = classId;
+        if (profileExists) {
+          await db.collection("users").doc(user.uid).set({
+            classId,
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          }, { merge: true });
+        }
+        showChosenClass(classId);
+        startRanking(user, classId);
+
+        const snapshot = await db.collection("users").doc(user.uid).get();
+        if (snapshot.exists && snapshot.data().nickname) {
+          const data = snapshot.data();
+          showChosenNickname(data.nickname, Number(data.xp) || 0);
+        } else {
+          showNicknamePicker(user);
+        }
+        statusText.className = "status";
+        statusText.textContent = `${classId}を登録しました`;
+      } catch (error) {
+        currentClassId = "";
+        showError(friendlyError(error));
+        showClassPicker(user);
+      }
+    }
+
     function showChosenNickname(nickname, xp = currentXp) {
       currentXp = Number.isFinite(xp) ? xp : 0;
       chosenNickname.textContent = nickname;
@@ -438,14 +550,30 @@
       nicknameResult.hidden = false;
     }
 
-    async function loadNickname(user) {
+    async function loadProfile(user) {
+      classLoading.hidden = false;
+      classPicker.hidden = true;
+      classResult.hidden = true;
       nicknameLoading.hidden = false;
       nicknamePicker.hidden = true;
       nicknameResult.hidden = true;
+      rankingArea.hidden = true;
       try {
         const snapshot = await db.collection("users").doc(user.uid).get();
-        if (snapshot.exists && snapshot.data().nickname) {
-          const data = snapshot.data();
+        profileExists = snapshot.exists;
+        const data = snapshot.exists ? snapshot.data() : {};
+
+        if (data.classId) {
+          showChosenClass(data.classId);
+          startRanking(user, data.classId);
+        } else {
+          currentClassId = "";
+          nicknameLoading.hidden = true;
+          showClassPicker(user);
+          return;
+        }
+
+        if (data.nickname) {
           showChosenNickname(data.nickname, Number(data.xp) || 0);
         } else {
           currentXp = 0;
@@ -458,6 +586,10 @@
     }
 
     async function saveNickname(user, nickname, button) {
+      if (!currentClassId) {
+        showError("先にクラスを選んでください。");
+        return;
+      }
       const buttons = nicknameOptions.querySelectorAll("button");
       buttons.forEach((item) => { item.disabled = true; });
       button.textContent = "保存しています…";
@@ -465,8 +597,10 @@
         await db.collection("users").doc(user.uid).set({
           nickname,
           xp: firebase.firestore.FieldValue.increment(0),
+          classId: currentClassId,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
+        profileExists = true;
         statusText.className = "status";
         statusText.textContent = "ニックネームをFirebaseに保存しました";
         showChosenNickname(nickname);
@@ -507,7 +641,11 @@
     function renderRanking(snapshot, currentUid) {
       rankingList.replaceChildren();
 
-      if (snapshot.empty) {
+      const rankedDocs = [...snapshot.docs]
+        .sort((a, b) => (Number(b.data().xp) || 0) - (Number(a.data().xp) || 0))
+        .slice(0, 10);
+
+      if (rankedDocs.length === 0) {
         const message = document.createElement("p");
         message.className = "ranking-message";
         message.textContent = "まだランキングデータがありません。";
@@ -515,7 +653,7 @@
         return;
       }
 
-      snapshot.docs.forEach((documentSnapshot, index) => {
+      rankedDocs.forEach((documentSnapshot, index) => {
         const data = documentSnapshot.data();
         const row = document.createElement("div");
         row.className = "ranking-row";
@@ -545,14 +683,14 @@
       });
     }
 
-    function startRanking(user) {
+    function startRanking(user, classId) {
       if (stopRanking) stopRanking();
       rankingArea.hidden = false;
+      rankingHelp.textContent = `${classId} クラス・上位10名`;
       rankingList.innerHTML = '<p class="ranking-message">ランキングを読み込んでいます…</p>';
 
       stopRanking = db.collection("users")
-        .orderBy("xp", "desc")
-        .limit(10)
+        .where("classId", "==", classId)
         .onSnapshot(
           (snapshot) => renderRanking(snapshot, user.uid),
           (error) => {
@@ -586,14 +724,18 @@
           displayName.textContent = user.displayName || "名前未設定";
           email.textContent = user.email || "メールアドレス非公開";
           renderAvatar(user);
-          loadNickname(user);
-          startRanking(user);
+          loadProfile(user);
         } else {
           if (stopRanking) {
             stopRanking();
             stopRanking = null;
           }
           rankingArea.hidden = true;
+          currentClassId = "";
+          profileExists = false;
+          classLoading.hidden = false;
+          classPicker.hidden = true;
+          classResult.hidden = true;
           nicknameLoading.hidden = false;
           nicknamePicker.hidden = true;
           nicknameResult.hidden = true;
