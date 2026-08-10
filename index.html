@@ -29,7 +29,7 @@
     }
 
     .card {
-      width: min(100%, 430px);
+      width: min(100%, 500px);
       padding: 36px;
       border: 1px solid rgba(255, 255, 255, .9);
       border-radius: 26px;
@@ -139,6 +139,41 @@
     .email { margin: 0 0 8px; color: #667085; font-size: 14px; overflow-wrap: anywhere; }
     .success { margin: 0 0 24px; color: #17803d; font-size: 14px; font-weight: 700; }
 
+    .nickname-area {
+      margin: 26px 0;
+      padding-top: 26px;
+      border-top: 1px solid #e7eaf0;
+    }
+
+    .nickname-title { margin: 0 0 8px; font-size: 19px; }
+    .nickname-help { margin: 0 0 17px; color: #667085; font-size: 13px; line-height: 1.6; }
+    .nickname-options { display: grid; gap: 10px; }
+
+    .nickname-button {
+      min-height: 48px;
+      border: 1px solid #d9dee8;
+      background: #fff;
+      color: #273142;
+      box-shadow: 0 5px 14px rgba(28, 39, 60, .06);
+    }
+
+    .nickname-button:hover:not(:disabled) {
+      border-color: #7c9cf5;
+      background: #f7f9ff;
+    }
+
+    .nickname-loading { margin: 0; color: #667085; font-size: 14px; }
+    .chosen-label { margin: 0 0 8px; color: #667085; font-size: 13px; }
+    .chosen-nickname { margin: 0 0 15px; font-size: 25px; font-weight: 850; }
+
+    .change-button {
+      min-height: 42px;
+      border: 1px solid #d9dee8;
+      background: transparent;
+      color: #50617f;
+      font-size: 13px;
+    }
+
     .logout-button { background: #172033; color: #fff; box-shadow: 0 10px 24px rgba(23, 32, 51, .2); }
 
     .footer {
@@ -174,6 +209,23 @@
       <p id="display-name" class="name"></p>
       <p id="email" class="email"></p>
       <p class="success">✓ ログインに成功しました</p>
+
+      <div class="nickname-area">
+        <p id="nickname-loading" class="nickname-loading">ニックネームを確認しています…</p>
+
+        <section id="nickname-picker" hidden aria-labelledby="nickname-title">
+          <h2 id="nickname-title" class="nickname-title">ニックネームを選ぼう</h2>
+          <p class="nickname-help">5つの候補から、好きな名前を1つ選んでください。</p>
+          <div id="nickname-options" class="nickname-options"></div>
+        </section>
+
+        <section id="nickname-result" hidden aria-label="選択したニックネーム">
+          <p class="chosen-label">あなたのニックネーム</p>
+          <p id="chosen-nickname" class="chosen-nickname"></p>
+          <button id="change-nickname-button" class="change-button" type="button">ニックネームを選び直す</button>
+        </section>
+      </div>
+
       <button id="logout-button" class="logout-button" type="button">ログアウト</button>
     </section>
 
@@ -183,6 +235,7 @@
   <!-- Firebase CDN（scriptタグ方式） -->
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
   <script>
     const firebaseConfig = {
       apiKey: "AIzaSyAtTSShVb_dG6vfIf6t1YV3wm_yoz1wkaI",
@@ -201,8 +254,15 @@
     const avatar = document.getElementById("avatar");
     const displayName = document.getElementById("display-name");
     const email = document.getElementById("email");
+    const nicknameLoading = document.getElementById("nickname-loading");
+    const nicknamePicker = document.getElementById("nickname-picker");
+    const nicknameOptions = document.getElementById("nickname-options");
+    const nicknameResult = document.getElementById("nickname-result");
+    const chosenNickname = document.getElementById("chosen-nickname");
+    const changeNicknameButton = document.getElementById("change-nickname-button");
 
     const hasPlaceholder = Object.values(firebaseConfig).some((value) => value.includes("PASTE_YOUR"));
+    let db = null;
 
     function showError(message) {
       statusText.textContent = message;
@@ -235,9 +295,95 @@
         "auth/popup-closed-by-user": "ログイン画面が閉じられました。もう一度お試しください。",
         "auth/popup-blocked": "ポップアップがブロックされました。ブラウザで許可してから再度お試しください。",
         "auth/unauthorized-domain": "このURLがFirebaseで許可されていません。Authenticationの承認済みドメインに追加してください。",
-        "auth/network-request-failed": "通信に失敗しました。インターネット接続を確認してください。"
+        "auth/network-request-failed": "通信に失敗しました。インターネット接続を確認してください。",
+        "permission-denied": "Firestoreへの保存が許可されていません。セキュリティルールを確認してください。",
+        "unavailable": "Firestoreへ接続できませんでした。少し待ってからもう一度お試しください。"
       };
       return messages[error.code] || `エラーが発生しました（${error.code || "unknown"}）`;
+    }
+
+    const adjectives = [
+      ["Happy", "😊"], ["Brave", "⭐"], ["Lucky", "🍀"], ["Swift", "⚡"],
+      ["Sunny", "☀️"], ["Clever", "💡"], ["Cool", "❄️"], ["Bright", "✨"],
+      ["Kind", "🌱"], ["Mighty", "🔥"]
+    ];
+    const animals = ["Tiger", "Panda", "Fox", "Penguin", "Eagle", "Otter", "Dolphin", "Falcon", "Koala", "Owl"];
+
+    function nicknameCandidates(uid) {
+      let seed = 0;
+      for (const character of uid) seed = (seed * 31 + character.charCodeAt(0)) >>> 0;
+
+      const choices = [];
+      const seen = new Set();
+      while (choices.length < 5) {
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        const adjective = adjectives[seed % adjectives.length];
+        seed = (seed * 1664525 + 1013904223) >>> 0;
+        const animal = animals[seed % animals.length];
+        const nickname = `${adjective[0]} ${animal}`;
+        if (!seen.has(nickname)) {
+          seen.add(nickname);
+          choices.push({ nickname, emoji: adjective[1] });
+        }
+      }
+      return choices;
+    }
+
+    function showNicknamePicker(user) {
+      nicknameOptions.replaceChildren();
+      for (const choice of nicknameCandidates(user.uid)) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "nickname-button";
+        button.textContent = `${choice.emoji}  ${choice.nickname}`;
+        button.addEventListener("click", () => saveNickname(user, choice.nickname, button));
+        nicknameOptions.appendChild(button);
+      }
+      nicknameLoading.hidden = true;
+      nicknameResult.hidden = true;
+      nicknamePicker.hidden = false;
+    }
+
+    function showChosenNickname(nickname) {
+      chosenNickname.textContent = nickname;
+      nicknameLoading.hidden = true;
+      nicknamePicker.hidden = true;
+      nicknameResult.hidden = false;
+    }
+
+    async function loadNickname(user) {
+      nicknameLoading.hidden = false;
+      nicknamePicker.hidden = true;
+      nicknameResult.hidden = true;
+      try {
+        const snapshot = await db.collection("users").doc(user.uid).get();
+        if (snapshot.exists && snapshot.data().nickname) {
+          showChosenNickname(snapshot.data().nickname);
+        } else {
+          showNicknamePicker(user);
+        }
+      } catch (error) {
+        nicknameLoading.hidden = true;
+        showError(friendlyError(error));
+      }
+    }
+
+    async function saveNickname(user, nickname, button) {
+      const buttons = nicknameOptions.querySelectorAll("button");
+      buttons.forEach((item) => { item.disabled = true; });
+      button.textContent = "保存しています…";
+      try {
+        await db.collection("users").doc(user.uid).set({
+          nickname,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        statusText.className = "status";
+        statusText.textContent = "ニックネームをFirebaseに保存しました";
+        showChosenNickname(nickname);
+      } catch (error) {
+        showError(friendlyError(error));
+        showNicknamePicker(user);
+      }
     }
 
     if (hasPlaceholder) {
@@ -247,6 +393,7 @@
     } else {
       firebase.initializeApp(firebaseConfig);
       const auth = firebase.auth();
+      db = firebase.firestore();
       const provider = new firebase.auth.GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
 
@@ -260,6 +407,11 @@
           displayName.textContent = user.displayName || "名前未設定";
           email.textContent = user.email || "メールアドレス非公開";
           renderAvatar(user);
+          loadNickname(user);
+        } else {
+          nicknameLoading.hidden = false;
+          nicknamePicker.hidden = true;
+          nicknameResult.hidden = true;
         }
       }, (error) => showError(friendlyError(error)));
 
@@ -285,6 +437,10 @@
         } finally {
           setBusy(logoutButton, false);
         }
+      });
+
+      changeNicknameButton.addEventListener("click", () => {
+        if (auth.currentUser) showNicknamePicker(auth.currentUser);
       });
     }
   </script>
