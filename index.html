@@ -174,6 +174,25 @@
       font-size: 13px;
     }
 
+    .xp-card {
+      margin: 20px 0 0;
+      padding: 20px;
+      border: 1px solid #e4e9f2;
+      border-radius: 18px;
+      background: linear-gradient(145deg, #f8faff, #eef3ff);
+    }
+
+    .xp-label { margin: 0 0 2px; color: #667085; font-size: 13px; font-weight: 700; }
+    .xp-value { margin: 0 0 14px; color: #315fd5; font-size: 42px; font-weight: 900; letter-spacing: -.04em; }
+    .xp-unit { margin-left: 5px; font-size: 17px; letter-spacing: 0; }
+
+    .xp-button {
+      min-height: 48px;
+      background: linear-gradient(135deg, #4777ee, #315fd5);
+      color: #fff;
+      box-shadow: 0 9px 22px rgba(49, 95, 213, .24);
+    }
+
     .logout-button { background: #172033; color: #fff; box-shadow: 0 10px 24px rgba(23, 32, 51, .2); }
 
     .footer {
@@ -223,13 +242,19 @@
           <p class="chosen-label">あなたのニックネーム</p>
           <p id="chosen-nickname" class="chosen-nickname"></p>
           <button id="change-nickname-button" class="change-button" type="button">ニックネームを選び直す</button>
+
+          <div class="xp-card">
+            <p class="xp-label">現在の経験値</p>
+            <p class="xp-value"><span id="xp-value">0</span><span class="xp-unit">XP</span></p>
+            <button id="add-xp-button" class="xp-button" type="button">＋10 XP</button>
+          </div>
         </section>
       </div>
 
       <button id="logout-button" class="logout-button" type="button">ログアウト</button>
     </section>
 
-    <p class="footer">Powered by Firebase Authentication</p>
+    <p class="footer">Powered by Firebase Authentication &amp; Firestore</p>
   </main>
 
   <!-- Firebase CDN（scriptタグ方式） -->
@@ -260,9 +285,12 @@
     const nicknameResult = document.getElementById("nickname-result");
     const chosenNickname = document.getElementById("chosen-nickname");
     const changeNicknameButton = document.getElementById("change-nickname-button");
+    const xpValue = document.getElementById("xp-value");
+    const addXpButton = document.getElementById("add-xp-button");
 
     const hasPlaceholder = Object.values(firebaseConfig).some((value) => value.includes("PASTE_YOUR"));
     let db = null;
+    let currentXp = 0;
 
     function showError(message) {
       statusText.textContent = message;
@@ -344,8 +372,10 @@
       nicknamePicker.hidden = false;
     }
 
-    function showChosenNickname(nickname) {
+    function showChosenNickname(nickname, xp = currentXp) {
+      currentXp = Number.isFinite(xp) ? xp : 0;
       chosenNickname.textContent = nickname;
+      xpValue.textContent = currentXp;
       nicknameLoading.hidden = true;
       nicknamePicker.hidden = true;
       nicknameResult.hidden = false;
@@ -358,8 +388,10 @@
       try {
         const snapshot = await db.collection("users").doc(user.uid).get();
         if (snapshot.exists && snapshot.data().nickname) {
-          showChosenNickname(snapshot.data().nickname);
+          const data = snapshot.data();
+          showChosenNickname(data.nickname, Number(data.xp) || 0);
         } else {
+          currentXp = 0;
           showNicknamePicker(user);
         }
       } catch (error) {
@@ -375,6 +407,7 @@
       try {
         await db.collection("users").doc(user.uid).set({
           nickname,
+          xp: firebase.firestore.FieldValue.increment(0),
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
         statusText.className = "status";
@@ -383,6 +416,30 @@
       } catch (error) {
         showError(friendlyError(error));
         showNicknamePicker(user);
+      }
+    }
+
+    async function addXp() {
+      const user = firebase.auth().currentUser;
+      if (!user) return;
+
+      setBusy(addXpButton, true);
+      const oldLabel = addXpButton.textContent;
+      addXpButton.textContent = "保存しています…";
+      try {
+        await db.collection("users").doc(user.uid).set({
+          xp: firebase.firestore.FieldValue.increment(10),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        currentXp += 10;
+        xpValue.textContent = currentXp;
+        statusText.className = "status";
+        statusText.textContent = `＋10 XPをFirebaseに保存しました（合計 ${currentXp} XP）`;
+      } catch (error) {
+        showError(friendlyError(error));
+      } finally {
+        addXpButton.textContent = oldLabel;
+        setBusy(addXpButton, false);
       }
     }
 
@@ -442,6 +499,8 @@
       changeNicknameButton.addEventListener("click", () => {
         if (auth.currentUser) showNicknamePicker(auth.currentUser);
       });
+
+      addXpButton.addEventListener("click", addXp);
     }
   </script>
 </body>
